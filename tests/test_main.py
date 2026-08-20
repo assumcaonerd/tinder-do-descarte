@@ -1,21 +1,26 @@
 import unittest
+from pathlib import Path
+
+from descarte.db import DB_PATH, init_db
 from descarte.main import (
     cadastrar_coletor,
     publicar_item,
     aceitar_match,
     listar_itens_proximos,
-    limpar_itens_expirados,
     store,
-    coletores,
 )
 
 
 class TestMainFlow(unittest.TestCase):
 
     def setUp(self):
-        # Limpa o estado entre os testes
-        store.items.clear()
-        coletores.clear()
+        if DB_PATH.exists():
+            DB_PATH.unlink()
+        init_db()
+
+    def tearDown(self):
+        if DB_PATH.exists():
+            DB_PATH.unlink()
 
     def test_fluxo_completo(self):
         # Cadastra coletor
@@ -25,7 +30,6 @@ class TestMainFlow(unittest.TestCase):
             interesses=["madeira", "eletronico"],
             raio_km=5.0,
         )
-        self.assertIn(cid, coletores)
 
         # Publica item próximo
         item_id = publicar_item(
