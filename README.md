@@ -53,33 +53,7 @@ Depois abra no navegador:
 python -m unittest discover -s tests -v
 ```
 
-### Exemplo de uso via Python
-
-```python
-from descarte.main import cadastrar_coletor, publicar_item, aceitar_match, listar_itens_proximos
-
-# Cadastra um coletor perto de Vitória-ES
-cid = cadastrar_coletor(
-    lat=-20.3155,
-    lng=-40.3128,
-    interesses=["madeira", "eletronico"],
-    raio_km=5.0
-)
-
-# Publica um sofá velho próximo
-item_id = publicar_item(
-    foto_url="https://exemplo.com/sofa.jpg",
-    categoria="madeira",
-    lat=-20.3180,
-    lng=-40.3100
-)
-
-print("Item publicado:", item_id)
-print("Itens próximos:", listar_itens_proximos(-20.3155, -40.3128))
-
-# Coletor aceita
-aceitar_match(item_id, cid)
-```
+O banco SQLite (`tinder_descarte.db`) é criado automaticamente na primeira execução.
 
 ## Estrutura do projeto
 
@@ -87,7 +61,8 @@ aceitar_match(item_id, cid)
 descarte/
 ├── __init__.py
 ├── models.py          # Item, Coletor, Match
-├── store.py           # Armazenamento + expiração
+├── store.py           # Store em memória (legado)
+├── db.py              # Persistência SQLite
 ├── proximity.py       # Cálculo de distância e matches
 ├── notify.py          # Sistema de notificações
 ├── main.py            # Fluxo principal
@@ -107,12 +82,15 @@ tests/
 - [x] Fluxo de publicação e aceite de match
 - [x] API HTTP com FastAPI
 - [x] Testes básicos
-- [ ] Persistência real (banco de dados)
+- [x] Persistência real com SQLite
 
-## Próximos passos
+## Próximos passos possíveis
 
-1. Persistência com SQLite
-2. Evoluir as notificações para push real (Firebase / OneSignal)
+- Autenticação de usuários
+- Upload real de fotos
+- Push notifications (Firebase / OneSignal)
+- Roteirização inteligente de coletas
+- Painel administrativo
 
 ## Licença
 
