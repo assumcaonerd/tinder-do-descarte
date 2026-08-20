@@ -2,15 +2,17 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 from uuid import uuid4
 
-from .models import Item, Coletor, Match
-from .store import ItemStore
+from .models import Item, Coletor
+from .db import SQLiteItemStore, salvar_coletor, listar_coletores, init_db
 from .proximity import find_matches
 from .notify import notify_coletor, notification_service
 
 
-# Instâncias globais simples (em produção virariam banco de dados)
-store = ItemStore()
-coletores: dict[str, Coletor] = {}
+# Garante que as tabelas existem
+init_db()
+
+# Usa o store com persistência em SQLite
+store = SQLiteItemStore()
 
 
 def cadastrar_coletor(
@@ -22,13 +24,14 @@ def cadastrar_coletor(
 ) -> str:
     """Cadastra ou atualiza um coletor e retorna o id."""
     cid = coletor_id or str(uuid4())
-    coletores[cid] = Coletor(
+    coletor = Coletor(
         id=cid,
         lat=lat,
         lng=lng,
         interesses=interesses,
         raio_km=raio_km,
     )
+    salvar_coletor(coletor)
     return cid
 
 
@@ -59,7 +62,8 @@ def publicar_item(
     store.add(item)
 
     # Encontra coletores próximos e com interesse
-    matches = find_matches(item, list(coletores.values()))
+    coletores = listar_coletores()
+    matches = find_matches(item, coletores)
 
     for match in matches:
         notify_coletor(match.coletor_id, item, match.distancia_km)
@@ -74,7 +78,6 @@ def aceitar_match(item_id: str, coletor_id: str) -> bool:
     sucesso = store.marcar_aceito(item_id)
 
     if sucesso:
-        # Aqui no futuro avisamos o doador
         print(f"[ACEITE] Coletor {coletor_id} aceitou o item {item_id}")
         notification_service.marcar_como_lida(coletor_id, item_id)
 
