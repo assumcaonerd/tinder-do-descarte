@@ -98,6 +98,32 @@ class SQLiteItemStore:
             status=row["status"],
         )
 
+    def atualizar_status(
+        self,
+        item_id: str,
+        status: str,
+        categoria: Optional[str] = None,
+    ) -> bool:
+        """Atualiza status (e opcionalmente a categoria) de um item."""
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        if categoria is not None:
+            cursor.execute(
+                "UPDATE itens SET status = ?, categoria = ? WHERE id = ?",
+                (status, categoria, item_id),
+            )
+        else:
+            cursor.execute(
+                "UPDATE itens SET status = ? WHERE id = ?",
+                (status, item_id),
+            )
+
+        sucesso = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        return sucesso
+
     def get_active_near(self, lat: float, lng: float, raio_km: float) -> List[Item]:
         agora = datetime.utcnow().isoformat()
         conn = get_connection()
