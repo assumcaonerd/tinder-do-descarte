@@ -1,0 +1,15 @@
+services:
+  api:
+    build: .
+    container_name: tinder_descarte_api
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persistência do banco SQLite
+      - ./data:/app/data
+      # Fotos enviadas pelos usuários
+      - ./static/uploads:/app/static/uploads
+    environment:
+      - ENV=dev
+      - DB_PATH=/app/data/tinder_descarte.db
+    restart: unless-stopped
