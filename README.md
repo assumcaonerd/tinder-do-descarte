@@ -6,12 +6,12 @@ O sistema resolve o problema de ponta a ponta: do upload da foto até a confirma
 
 ## O que o sistema faz
 
-- **Upload com triagem assíncrona** — recebe a foto, responde 202 na hora e processa a IA em background. Só libera o item no mapa se for aprovado.
+- **Upload com triagem assíncrona** — responde 202 na hora e processa a IA em background.
 - **Match geográfico** — Haversine + interesses do coletor.
 - **Notificação em tempo real** — WebSocket nativo.
 - **Roteirização** — Vizinho Mais Próximo (Nearest Neighbor).
 - **Ciclo de vida** — `processando → ativo → aceito → concluido` (ou `rejeitado`).
-- **Impacto ambiental** — peso desviado de aterro + CO₂ estimado + equivalência em árvores.
+- **Impacto ambiental** — peso desviado de aterro + CO₂ estimado.
 
 ## Stack
 
@@ -19,9 +19,10 @@ O sistema resolve o problema de ponta a ponta: do upload da foto até a confirma
 - FastAPI + Uvicorn
 - SQLite
 - WebSockets
-- BackgroundTasks (processamento assíncrono)
+- BackgroundTasks
+- Docker
 
-## Instalação
+## Instalação local
 
 ```bash
 git clone https://github.com/assumcaonerd/tinder-do-descarte.git
@@ -29,17 +30,26 @@ cd tinder-do-descarte
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-## Rodar
-
-```bash
 uvicorn descarte.api:app --reload --host 0.0.0.0 --port 8000
 ```
+
+## Rodar com Docker
+
+```bash
+docker compose up --build
+```
+
+A API sobe em http://localhost:8000.
 
 - Docs: http://localhost:8000/docs
 - Status: http://localhost:8000/status
 - Impacto: http://localhost:8000/impacto/global
+
+Os volumes mapeiam:
+- `./data` → banco SQLite
+- `./static/uploads` → fotos enviadas
+
+Assim os dados sobrevivem se o container for reiniciado.
 
 ## Principais endpoints
 
@@ -59,11 +69,12 @@ uvicorn descarte.api:app --reload --host 0.0.0.0 --port 8000
 
 - [x] Geolocalização e matching
 - [x] Notificações WebSocket
-- [x] Upload + triagem assíncrona (BackgroundTasks)
+- [x] Upload + triagem assíncrona
 - [x] Persistência SQLite
 - [x] Roteirização
 - [x] Histórico + pontos verdes
 - [x] Impacto ambiental
+- [x] Docker + volumes
 - [x] Testes básicos
 - [ ] Autenticação (JWT)
 
