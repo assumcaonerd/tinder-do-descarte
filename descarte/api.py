@@ -11,9 +11,11 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
     BackgroundTasks,
+    Depends,
 )
+from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 
 from .main import (
     cadastrar_coletor,
@@ -33,14 +35,24 @@ from .notify import gerenciador_notificacoes
 from .routing import otimizador_rotas
 from .historico import gerenciador_historico, criar_tabela_historico
 from .impact import calculadora_impacto
+from .auth import (
+    criar_tabela_usuarios,
+    cadastrar_usuario,
+    autenticar_usuario,
+    criar_token_acesso,
+    obter_usuario_atual,
+    exigir_coletor,
+    exigir_autenticado,
+)
 
 
 criar_tabela_historico()
+criar_tabela_usuarios()
 
 app = FastAPI(
     title="Tinder do Descarte",
     description="API para descarte responsável de resíduos volumosos",
-    version="0.7.0",
+    version="0.8.0",
 )
 
 UPLOAD_DIR = "static/uploads"
@@ -84,7 +96,6 @@ async def processar_triagem_e_notificar(
     item_id: str,
     caminho_arquivo: str,
 ):
-    """Roda em segundo plano: IA → ativar ou rejeitar → notificar."""
     print(f"[Background] Triagem do item {item_id}...")
 
     resultado = analisar_imagem_com_ia(caminho_arquivo)
@@ -96,7 +107,6 @@ async def processar_triagem_e_notificar(
             os.remove(caminho_arquivo)
         return
 
-    # Ativa o item e dispara matches + WebSocket
     sucesso = ativar_item_e_notificar(item_id, resultado["categoria"])
 
     if sucesso:
@@ -125,6 +135,20 @@ async def processar_triagem_e_notificar(
 
 # ---------- Schemas ----------
 
+class UsuarioCreate(BaseModel):
+    email: str
+    senha: str = Field(min_length=6)
+    role: str = Field(description="doador ou coletor")
+    nome: Optional[str] = None
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    role: str
+    usuario_id: str
+
+
 class ColetorCreate(BaseModel):
     lat: float
     lng: float
@@ -143,7 +167,6 @@ class ItemCreate(BaseModel):
 
 class AceiteRequest(BaseModel):
     item_id: str
-    coletor_id: str
 
 
 class RequisicaoRota(BaseModel):
@@ -154,7 +177,6 @@ class RequisicaoRota(BaseModel):
 
 class RequisicaoConclusao(BaseModel):
     item_id: str
-    coletor_id: str
 
 
 class ItemResponse(BaseModel):
@@ -177,6 +199,56 @@ class ItemResponse(BaseModel):
         )
 
 
+# ---------- Auth ----------
+
+@app.post("/auth/registro", summary="Cadastrar usuário (doador ou coletor)")
+def registro(dados: UsuarioCreate):
+    try:
+        usuario = cadastrar_usuario(
+            email=dados.email,
+            senha=dados.senha,
+            role=dados.role,
+            nome=dados.nome,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return {
+        "mensagem": "Usuário cadastrado com sucesso",
+        "usuario": usuario,
+    }
+
+
+@app.post("/auth/login", summary="Login e emissão de JWT")
+def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    usuario = autenticar_usuario(form_data.username, form_data.password)
+    if not usuario:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="E-mail ou senha incorretos",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token = criar_token_acesso(
+        {
+            "sub": usuario["id"],
+            "role": usuario["role"],
+            "email": usuario["email"],
+        }
+    )
+
+    return TokenResponse(
+        access_token=token,
+        role=usuario["role"],
+        usuario_id=usuario["id"],
+    )
+
+
+@app.get("/auth/me", summary="Dados do usuário logado")
+def me(usuario: dict = Depends(obter_usuario_atual)):
+    return usuario
+
+
 # ---------- Endpoints HTTP ----------
 
 @app.get("/")
@@ -184,26 +256,33 @@ def root():
     return {
         "app": "Tinder do Descarte",
         "status": "online",
-        "version": "0.7.0",
+        "version": "0.8.0",
         "docs": "/docs",
         "websocket": "/notificacoes/conectar/{coletor_id}",
     }
 
 
-@app.post("/coletores", summary="Cadastrar coletor")
-def criar_coletor(dados: ColetorCreate):
+@app.post("/coletores", summary="Cadastrar coletor (perfil de localização)")
+def criar_coletor(
+    dados: ColetorCreate,
+    usuario: dict = Depends(exigir_coletor),
+):
+    # Usa o ID do usuário autenticado como coletor_id se não for informado
     cid = cadastrar_coletor(
         lat=dados.lat,
         lng=dados.lng,
         interesses=dados.interesses,
         raio_km=dados.raio_km,
-        coletor_id=dados.coletor_id,
+        coletor_id=dados.coletor_id or usuario["usuario_id"],
     )
     return {"coletor_id": cid}
 
 
 @app.post("/itens", summary="Publicar item (com URL de foto já existente)")
-async def criar_item(dados: ItemCreate):
+async def criar_item(
+    dados: ItemCreate,
+    usuario: dict = Depends(exigir_autenticado),
+):
     item_id = publicar_item(
         foto_url=dados.foto_url,
         categoria=dados.categoria,
@@ -245,6 +324,7 @@ async def publicar_item_com_foto(
     longitude: float = Form(...),
     file: UploadFile = File(...),
     validade_horas: int = Form(48),
+    usuario: dict = Depends(exigir_autenticado),
 ):
     if not file.filename:
         raise HTTPException(
@@ -268,7 +348,6 @@ async def publicar_item_com_foto(
 
     foto_url = f"/static/uploads/{novo_nome}"
 
-    # Cria o item já no banco, mas ainda invisível no mapa
     item_id = criar_item_temporario(
         foto_url=foto_url,
         lat=latitude,
@@ -276,7 +355,6 @@ async def publicar_item_com_foto(
         validade_horas=validade_horas,
     )
 
-    # Agenda a triagem + notificação para rodar depois da resposta
     background_tasks.add_task(
         processar_triagem_e_notificar,
         item_id,
@@ -292,8 +370,11 @@ async def publicar_item_com_foto(
 
 
 @app.post("/matches/aceitar", summary="Coletor aceita um item")
-def aceitar(dados: AceiteRequest):
-    sucesso = aceitar_match(dados.item_id, dados.coletor_id)
+def aceitar(
+    dados: AceiteRequest,
+    usuario: dict = Depends(exigir_coletor),
+):
+    sucesso = aceitar_match(dados.item_id, usuario["usuario_id"])
     if not sucesso:
         raise HTTPException(
             status_code=400,
@@ -308,8 +389,11 @@ def itens_proximos(lat: float, lng: float, raio_km: float = 5.0):
     return [ItemResponse.from_model(i) for i in itens]
 
 
-@app.post("/coletas/otimizar-rota", summary="Otimizar ordem de coleta (Nearest Neighbor)")
-async def otimizar_rota_coleta(dados: RequisicaoRota):
+@app.post("/coletas/otimizar-rota", summary="Otimizar ordem de coleta")
+async def otimizar_rota_coleta(
+    dados: RequisicaoRota,
+    usuario: dict = Depends(exigir_coletor),
+):
     if not dados.item_ids:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -358,8 +442,13 @@ async def otimizar_rota_coleta(dados: RequisicaoRota):
 
 
 @app.post("/coletas/concluir", summary="Concluir coleta e gerar pontos verdes")
-def concluir_descarte(dados: RequisicaoConclusao):
-    resultado = gerenciador_historico.concluir_coleta(dados.item_id, dados.coletor_id)
+def concluir_descarte(
+    dados: RequisicaoConclusao,
+    usuario: dict = Depends(exigir_coletor),
+):
+    resultado = gerenciador_historico.concluir_coleta(
+        dados.item_id, usuario["usuario_id"]
+    )
 
     if not resultado["sucesso"]:
         raise HTTPException(status_code=400, detail=resultado["erro"])
@@ -392,7 +481,7 @@ def impacto_por_coletor(coletor_id: str):
 
 
 @app.post("/manutencao/limpar-expirados", summary="Limpar itens expirados")
-def limpar():
+def limpar(usuario: dict = Depends(exigir_autenticado)):
     quantidade = limpar_itens_expirados()
     return {"itens_expirados": quantidade}
 
