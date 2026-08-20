@@ -1,5 +1,8 @@
+import os
+import uuid
 from typing import List, Optional
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, status
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .main import (
@@ -17,8 +20,51 @@ from .models import Item
 app = FastAPI(
     title="Tinder do Descarte",
     description="API para descarte responsável de resíduos volumosos",
-    version="0.1.0",
+    version="0.2.0",
 )
+
+# Diretório de uploads
+UPLOAD_DIR = "static/uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# Serve os arquivos estáticos (fotos)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+# ---------- Simulação de IA de triagem ----------
+
+def analisar_imagem_com_ia(file_path: str) -> dict:
+    """
+    Simula uma chamada de visão computacional.
+    Em produção aqui entraria um modelo real (CLIP, YOLO, etc.).
+    """
+    nome = file_path.lower()
+
+    # Rejeita se o nome sugerir lixo doméstico/orgânico
+    if any(palavra in nome for palavra in ["lixo", "organico", "resto", "comida"]):
+        return {
+            "valido": False,
+            "categoria": "Desconhecido",
+            "confianca": 0.12,
+            "motivo": "Imagem detectada como possível lixo doméstico ou orgânico",
+        }
+
+    # Categorização simples por palavra-chave no nome (apenas para demonstração)
+    if any(p in nome for p in ["sofa", "cadeira", "mesa", "madeira", "movel"]):
+        categoria = "madeira"
+    elif any(p in nome for p in ["tv", "monitor", "notebook", "celular", "eletronico"]):
+        categoria = "eletronico"
+    elif any(p in nome for p in ["ferro", "metal", "alumínio", "aluminio"]):
+        categoria = "metal"
+    else:
+        categoria = "outros"
+
+    return {
+        "valido": True,
+        "categoria": categoria,
+        "confianca": 0.91,
+        "motivo": None,
+    }
 
 
 # ---------- Schemas ----------
@@ -71,6 +117,7 @@ def root():
     return {
         "app": "Tinder do Descarte",
         "status": "online",
+        "version": "0.2.0",
         "docs": "/docs",
     }
 
@@ -87,7 +134,7 @@ def criar_coletor(dados: ColetorCreate):
     return {"coletor_id": cid}
 
 
-@app.post("/itens", summary="Publicar item para descarte")
+@app.post("/itens", summary="Publicar item (com URL de foto já existente)")
 def criar_item(dados: ItemCreate):
     item_id = publicar_item(
         foto_url=dados.foto_url,
@@ -97,6 +144,67 @@ def criar_item(dados: ItemCreate):
         validade_horas=dados.validade_horas,
     )
     return {"item_id": item_id}
+
+
+@app.post("/itens/publicar-com-foto", summary="Publicar item com upload de foto + validação de IA")
+async def publicar_item_com_foto(
+    latitude: float = Form(...),
+    longitude: float = Form(...),
+    file: UploadFile = File(...),
+    validade_horas: int = Form(48),
+):
+    # Validar extensão
+    if not file.filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Arquivo sem nome.",
+        )
+
+    extensao = file.filename.split(".")[-1].lower()
+    if extensao not in ["jpg", "jpeg", "png"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Apenas imagens JPG ou PNG são permitidas.",
+        )
+
+    # Nome único
+    novo_nome = f"{uuid.uuid4()}.{extensao}"
+    caminho_final = os.path.join(UPLOAD_DIR, novo_nome)
+
+    # Salva o arquivo
+    content = await file.read()
+    with open(caminho_final, "wb") as buffer:
+        buffer.write(content)
+
+    # Triagem pela IA simulada
+    resultado_ia = analisar_imagem_com_ia(caminho_final)
+
+    if not resultado_ia["valido"]:
+        os.remove(caminho_final)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=resultado_ia["motivo"] or "Item rejeitado pela análise de imagem.",
+        )
+
+    # Monta a URL pública da foto
+    foto_url = f"/static/uploads/{novo_nome}"
+
+    # Publica usando o fluxo já existente
+    item_id = publicar_item(
+        foto_url=foto_url,
+        categoria=resultado_ia["categoria"],
+        lat=latitude,
+        lng=longitude,
+        validade_horas=validade_horas,
+    )
+
+    return {
+        "mensagem": "Item publicado com sucesso",
+        "item_id": item_id,
+        "foto_url": foto_url,
+        "categoria_detectada": resultado_ia["categoria"],
+        "confianca_ia": resultado_ia["confianca"],
+    }
 
 
 @app.post("/matches/aceitar", summary="Coletor aceita um item")
