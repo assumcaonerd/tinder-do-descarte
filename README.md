@@ -47,6 +47,12 @@ Depois abra no navegador:
 - Documentação interativa: http://localhost:8000/docs
 - Status: http://localhost:8000/status
 
+### Rodar os testes
+
+```bash
+python -m unittest discover -s tests -v
+```
+
 ### Exemplo de uso via Python
 
 ```python
@@ -86,6 +92,11 @@ descarte/
 ├── notify.py          # Sistema de notificações
 ├── main.py            # Fluxo principal
 └── api.py             # API HTTP (FastAPI)
+
+tests/
+├── test_proximity.py
+├── test_store.py
+└── test_main.py
 ```
 
 ## Status atual
@@ -95,14 +106,13 @@ descarte/
 - [x] Store completo + expiração de itens
 - [x] Fluxo de publicação e aceite de match
 - [x] API HTTP com FastAPI
-- [ ] Testes
+- [x] Testes básicos
 - [ ] Persistência real (banco de dados)
 
 ## Próximos passos
 
-1. Criar testes simples
-2. Persistência com SQLite
-3. Evoluir as notificações para push real (Firebase / OneSignal)
+1. Persistência com SQLite
+2. Evoluir as notificações para push real (Firebase / OneSignal)
 
 ## Licença
 
