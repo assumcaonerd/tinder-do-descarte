@@ -1,3 +1,4 @@
+import os
 import sqlite3
 from datetime import datetime
 from typing import List, Optional
@@ -7,10 +8,14 @@ from .models import Item, Coletor
 from .proximity import haversine
 
 
-DB_PATH = Path(__file__).parent.parent / "tinder_descarte.db"
+# Permite sobrescrever o caminho via variável de ambiente (útil no Docker)
+_default_path = Path(__file__).parent.parent / "tinder_descarte.db"
+DB_PATH = Path(os.getenv("DB_PATH", str(_default_path)))
 
 
 def get_connection() -> sqlite3.Connection:
+    # Garante que o diretório do banco exista
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
