@@ -10,11 +10,16 @@ Conecta pessoas que precisam descartar móveis, eletrônicos e materiais de refo
 - Coletores recebem notificações em tempo real via WebSocket.
 - Sistema de match por proximidade + interesses.
 - Validação automática da foto por IA simulada.
-- Roteirização inteligente das coletas (algoritmo do Vizinho Mais Próximo).
+- Roteirização inteligente das coletas.
+- Histórico imutável de coletas concluídas + pontos verdes (Moedas Verdes).
 
-## Objetivo
+## Ciclo de vida do item
 
-Facilitar a economia circular local, reduzir descarte irregular e gerar matéria-prima para quem trabalha com reciclagem e upcycling.
+```
+disponivel → aceito → concluido
+```
+
+Quando a coleta é concluída, o item some do mapa e gera pontos verdes para o coletor.
 
 ## Instalação
 
@@ -34,35 +39,36 @@ uvicorn descarte.api:app --reload --host 0.0.0.0 --port 8000
 
 - Documentação: http://localhost:8000/docs
 - Status: http://localhost:8000/status
-- WebSocket: `ws://localhost:8000/notificacoes/conectar/{coletor_id}`
 
 ## Principais endpoints
 
 | Método | Rota | Descrição |
 |--------|------|-----------|
 | POST | `/coletores` | Cadastrar coletor |
-| POST | `/itens` | Publicar item (com URL) |
+| POST | `/itens` | Publicar item |
 | POST | `/itens/publicar-com-foto` | Publicar com upload + IA |
 | POST | `/matches/aceitar` | Aceitar coleta |
-| GET | `/itens/proximos` | Listar itens próximos |
 | POST | `/coletas/otimizar-rota` | Otimizar ordem das paradas |
+| POST | `/coletas/concluir` | Concluir coleta + gerar pontos |
+| GET | `/coletas/historico` | Listar coletas concluídas |
+| GET | `/coletas/pontos/{id}` | Total de Moedas Verdes |
 | WS | `/notificacoes/conectar/{id}` | Alertas em tempo real |
 
 ## Status atual
 
 - [x] Geolocalização e matching
-- [x] Notificações WebSocket em tempo real
-- [x] Upload de foto + validação de IA
+- [x] Notificações WebSocket
+- [x] Upload de foto + IA
 - [x] Persistência SQLite
-- [x] Roteirização inteligente de coletas
+- [x] Roteirização inteligente
+- [x] Histórico de coletas + pontos verdes
 - [x] Testes básicos
 
 ## Próximos passos possíveis
 
-- Autenticação de usuários
-- Histórico de coletas concluídas
-- Modelo real de visão computacional
-- Push nativo (Firebase) como fallback
+- Autenticação de usuários (JWT)
+- Estimativa de impacto ambiental (CO₂ / peso)
+- Push nativo (Firebase)
 - Painel administrativo
 
 ## Licença
