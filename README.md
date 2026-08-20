@@ -11,7 +11,8 @@ Conecta pessoas que precisam descartar móveis, eletrônicos e materiais de refo
 - Sistema de match por proximidade + interesses.
 - Validação automática da foto por IA simulada.
 - Roteirização inteligente das coletas.
-- Histórico imutável de coletas concluídas + pontos verdes (Moedas Verdes).
+- Histórico de coletas + pontos verdes (Moedas Verdes).
+- Cálculo de impacto ambiental (peso desviado de aterro + CO₂ poupado).
 
 ## Ciclo de vida do item
 
@@ -19,7 +20,7 @@ Conecta pessoas que precisam descartar móveis, eletrônicos e materiais de refo
 disponivel → aceito → concluido
 ```
 
-Quando a coleta é concluída, o item some do mapa e gera pontos verdes para o coletor.
+Quando a coleta é concluída, o item some do mapa, gera pontos verdes e alimenta as métricas de impacto.
 
 ## Instalação
 
@@ -39,6 +40,7 @@ uvicorn descarte.api:app --reload --host 0.0.0.0 --port 8000
 
 - Documentação: http://localhost:8000/docs
 - Status: http://localhost:8000/status
+- Impacto global: http://localhost:8000/impacto/global
 
 ## Principais endpoints
 
@@ -52,6 +54,8 @@ uvicorn descarte.api:app --reload --host 0.0.0.0 --port 8000
 | POST | `/coletas/concluir` | Concluir coleta + gerar pontos |
 | GET | `/coletas/historico` | Listar coletas concluídas |
 | GET | `/coletas/pontos/{id}` | Total de Moedas Verdes |
+| GET | `/impacto/global` | Painel de impacto ambiental |
+| GET | `/impacto/coletor/{id}` | Impacto de um coletor |
 | WS | `/notificacoes/conectar/{id}` | Alertas em tempo real |
 
 ## Status atual
@@ -62,14 +66,15 @@ uvicorn descarte.api:app --reload --host 0.0.0.0 --port 8000
 - [x] Persistência SQLite
 - [x] Roteirização inteligente
 - [x] Histórico de coletas + pontos verdes
+- [x] Cálculo de impacto ambiental (CO₂ e peso)
 - [x] Testes básicos
 
 ## Próximos passos possíveis
 
 - Autenticação de usuários (JWT)
-- Estimativa de impacto ambiental (CO₂ / peso)
 - Push nativo (Firebase)
 - Painel administrativo
+- Modelo real de visão computacional
 
 ## Licença
 
