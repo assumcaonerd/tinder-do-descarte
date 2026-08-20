@@ -19,6 +19,7 @@ from .proximity import find_matches
 from .notify import gerenciador_notificacoes
 from .routing import otimizador_rotas
 from .historico import gerenciador_historico, criar_tabela_historico
+from .impact import calculadora_impacto
 
 
 # Garante que a tabela de histórico existe
@@ -27,7 +28,7 @@ criar_tabela_historico()
 app = FastAPI(
     title="Tinder do Descarte",
     description="API para descarte responsável de resíduos volumosos",
-    version="0.5.0",
+    version="0.6.0",
 )
 
 # Diretório de uploads
@@ -129,7 +130,7 @@ def root():
     return {
         "app": "Tinder do Descarte",
         "status": "online",
-        "version": "0.5.0",
+        "version": "0.6.0",
         "docs": "/docs",
         "websocket": "/notificacoes/conectar/{coletor_id}",
     }
@@ -341,6 +342,16 @@ def consultar_pontos_coletor(coletor_id: str):
         "coletor_id": coletor_id,
         "total_moedas_verdes": pontos,
     }
+
+
+@app.get("/impacto/global", summary="Painel de impacto ambiental global")
+def impacto_global():
+    return calculadora_impacto.calcular_impacto_global()
+
+
+@app.get("/impacto/coletor/{coletor_id}", summary="Impacto ambiental de um coletor")
+def impacto_por_coletor(coletor_id: str):
+    return calculadora_impacto.calcular_impacto_por_coletor(coletor_id)
 
 
 @app.post("/manutencao/limpar-expirados", summary="Limpar itens expirados")
