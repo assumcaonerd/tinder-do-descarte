@@ -1,13 +1,24 @@
 import unittest
 from datetime import datetime, timedelta
-from descarte.store import ItemStore
+from pathlib import Path
+import os
+
+from descarte.db import SQLiteItemStore, DB_PATH, init_db
 from descarte.models import Item
 
 
-class TestItemStore(unittest.TestCase):
+class TestSQLiteItemStore(unittest.TestCase):
 
     def setUp(self):
-        self.store = ItemStore()
+        # Usa um banco temporário para não sujar o principal
+        if DB_PATH.exists():
+            DB_PATH.unlink()
+        init_db()
+        self.store = SQLiteItemStore()
+
+    def tearDown(self):
+        if DB_PATH.exists():
+            DB_PATH.unlink()
 
     def _criar_item(self, item_id="item1", horas_validade=48, status="ativo"):
         agora = datetime.utcnow()
@@ -33,16 +44,14 @@ class TestItemStore(unittest.TestCase):
         item = self._criar_item()
         self.store.add(item)
 
-        # Ponto bem próximo
         proximos = self.store.get_active_near(-20.3160, -40.3130, raio_km=2.0)
         self.assertEqual(len(proximos), 1)
 
-        # Ponto longe
         longe = self.store.get_active_near(-20.5000, -40.5000, raio_km=2.0)
         self.assertEqual(len(longe), 0)
 
     def test_expire_old(self):
-        item_expirado = self._criar_item(item_id="exp", horas_validade=-1)  # já passou
+        item_expirado = self._criar_item(item_id="exp", horas_validade=-1)
         self.store.add(item_expirado)
 
         quantidade = self.store.expire_old()
@@ -57,7 +66,6 @@ class TestItemStore(unittest.TestCase):
         self.assertTrue(sucesso)
         self.assertEqual(self.store.get("item1").status, "aceito")
 
-        # Não deve aceitar de novo
         sucesso2 = self.store.marcar_aceito("item1")
         self.assertFalse(sucesso2)
 
