@@ -37,17 +37,32 @@ source .venv/bin/activate          # Linux / macOS
 # (as funções de geolocalização usam apenas a biblioteca padrão)
 ```
 
-### Como testar a lógica de geolocalização
-
-Você pode abrir o Python interativo e importar as funções:
+### Como testar o fluxo completo
 
 ```python
-from descarte.proximity import haversine, find_matches
-from descarte.models import Item, Coletor
-from datetime import datetime, timedelta
+from descarte.main import cadastrar_coletor, publicar_item, aceitar_match, listar_itens_proximos
 
-# Exemplo rápido de distância
-print(haversine(-20.3155, -40.3128, -20.3200, -40.3100))  # ~0.6 km
+# Cadastra um coletor perto de Vitória-ES
+cid = cadastrar_coletor(
+    lat=-20.3155,
+    lng=-40.3128,
+    interesses=["madeira", "eletronico"],
+    raio_km=5.0
+)
+
+# Publica um sofá velho próximo
+item_id = publicar_item(
+    foto_url="https://exemplo.com/sofa.jpg",
+    categoria="madeira",
+    lat=-20.3180,
+    lng=-40.3100
+)
+
+print("Item publicado:", item_id)
+print("Itens próximos:", listar_itens_proximos(-20.3155, -40.3128))
+
+# Coletor aceita
+aceitar_match(item_id, cid)
 ```
 
 ## Estrutura do projeto
@@ -56,26 +71,27 @@ print(haversine(-20.3155, -40.3128, -20.3200, -40.3100))  # ~0.6 km
 descarte/
 ├── __init__.py
 ├── models.py          # Item, Coletor, Match
-├── store.py           # Armazenamento de itens ativos
-├── proximity.py       # Cálculo de distância e matches (implementado)
-├── notify.py          # Sistema de notificações (implementado)
-└── main.py            # Fluxo principal de publicação e aceite
+├── store.py           # Armazenamento + expiração
+├── proximity.py       # Cálculo de distância e matches
+├── notify.py          # Sistema de notificações
+└── main.py            # Fluxo principal
 ```
 
 ## Status atual
 
 - [x] Lógica de geolocalização (haversine + find_matches)
 - [x] Sistema básico de notificações
-- [ ] Store completo + expiração de itens
-- [ ] Fluxo de publicação e aceite de match
+- [x] Store completo + expiração de itens
+- [x] Fluxo de publicação e aceite de match
 - [ ] Interface / API
+- [ ] Persistência real (banco de dados)
 
 ## Próximos passos
 
-1. Completar o `ItemStore` e a expiração automática
-2. Implementar o fluxo em `main.py`
-3. Criar testes simples
-4. Evoluir as notificações para push real (Firebase / OneSignal)
+1. Criar testes simples
+2. Adicionar uma API HTTP (FastAPI ou Flask)
+3. Evoluir as notificações para push real (Firebase / OneSignal)
+4. Persistência com SQLite ou PostgreSQL
 
 ## Licença
 
