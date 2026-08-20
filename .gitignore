@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Banco local
+tinder_descarte.db
+*.db
+
+# Uploads de teste
+static/uploads/*
+!static/uploads/.gitkeep
+
+# IDE e SO
+.idea/
+.vscode/
+.DS_Store
+*.swp
+
+# Env
+.env
+.env.local
