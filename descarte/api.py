@@ -1,13 +1,26 @@
 import os
 import uuid
 from typing import List, Optional
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, status, WebSocket, WebSocketDisconnect
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    UploadFile,
+    File,
+    Form,
+    status,
+    WebSocket,
+    WebSocketDisconnect,
+    BackgroundTasks,
+)
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .main import (
     cadastrar_coletor,
     publicar_item,
+    criar_item_temporario,
+    ativar_item_e_notificar,
+    rejeitar_item,
     aceitar_match,
     listar_itens_proximos,
     limpar_itens_expirados,
@@ -22,20 +35,16 @@ from .historico import gerenciador_historico, criar_tabela_historico
 from .impact import calculadora_impacto
 
 
-# Garante que a tabela de histórico existe
 criar_tabela_historico()
 
 app = FastAPI(
     title="Tinder do Descarte",
     description="API para descarte responsável de resíduos volumosos",
-    version="0.6.0",
+    version="0.7.0",
 )
 
-# Diretório de uploads
 UPLOAD_DIR = "static/uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-# Serve os arquivos estáticos (fotos)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
@@ -67,6 +76,51 @@ def analisar_imagem_com_ia(file_path: str) -> dict:
         "confianca": 0.91,
         "motivo": None,
     }
+
+
+# ---------- Background Task ----------
+
+async def processar_triagem_e_notificar(
+    item_id: str,
+    caminho_arquivo: str,
+):
+    """Roda em segundo plano: IA → ativar ou rejeitar → notificar."""
+    print(f"[Background] Triagem do item {item_id}...")
+
+    resultado = analisar_imagem_com_ia(caminho_arquivo)
+
+    if not resultado["valido"]:
+        print(f"[Background] Item {item_id} rejeitado pela IA.")
+        rejeitar_item(item_id)
+        if os.path.exists(caminho_arquivo):
+            os.remove(caminho_arquivo)
+        return
+
+    # Ativa o item e dispara matches + WebSocket
+    sucesso = ativar_item_e_notificar(item_id, resultado["categoria"])
+
+    if sucesso:
+        item = store.get(item_id)
+        if item:
+            coletores = listar_coletores()
+            matches = find_matches(item, coletores)
+            payload = {
+                "evento": "novo_descarte_proximo",
+                "item": {
+                    "id": item.id,
+                    "categoria": item.categoria,
+                    "lat": item.lat,
+                    "lng": item.lng,
+                    "foto_url": item.foto_url,
+                },
+            }
+            for match in matches:
+                await gerenciador_notificacoes.enviar_alerta_individual(
+                    match.coletor_id, payload
+                )
+        print(f"[Background] Item {item_id} aprovado e notificado.")
+    else:
+        print(f"[Background] Falha ao ativar item {item_id}.")
 
 
 # ---------- Schemas ----------
@@ -130,7 +184,7 @@ def root():
     return {
         "app": "Tinder do Descarte",
         "status": "online",
-        "version": "0.6.0",
+        "version": "0.7.0",
         "docs": "/docs",
         "websocket": "/notificacoes/conectar/{coletor_id}",
     }
@@ -180,8 +234,13 @@ async def criar_item(dados: ItemCreate):
     return {"item_id": item_id}
 
 
-@app.post("/itens/publicar-com-foto", summary="Publicar item com upload de foto + validação de IA")
+@app.post(
+    "/itens/publicar-com-foto",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Publicar item com upload (processamento em background)",
+)
 async def publicar_item_com_foto(
+    background_tasks: BackgroundTasks,
     latitude: float = Form(...),
     longitude: float = Form(...),
     file: UploadFile = File(...),
@@ -207,50 +266,28 @@ async def publicar_item_com_foto(
     with open(caminho_final, "wb") as buffer:
         buffer.write(content)
 
-    resultado_ia = analisar_imagem_com_ia(caminho_final)
-
-    if not resultado_ia["valido"]:
-        os.remove(caminho_final)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=resultado_ia["motivo"] or "Item rejeitado pela análise de imagem.",
-        )
-
     foto_url = f"/static/uploads/{novo_nome}"
 
-    item_id = publicar_item(
+    # Cria o item já no banco, mas ainda invisível no mapa
+    item_id = criar_item_temporario(
         foto_url=foto_url,
-        categoria=resultado_ia["categoria"],
         lat=latitude,
         lng=longitude,
         validade_horas=validade_horas,
     )
 
-    item = store.get(item_id)
-    if item:
-        coletores = listar_coletores()
-        matches = find_matches(item, coletores)
-        payload = {
-            "evento": "novo_descarte_proximo",
-            "item": {
-                "id": item.id,
-                "categoria": item.categoria,
-                "lat": item.lat,
-                "lng": item.lng,
-                "foto_url": item.foto_url,
-            },
-        }
-        for match in matches:
-            await gerenciador_notificacoes.enviar_alerta_individual(
-                match.coletor_id, payload
-            )
+    # Agenda a triagem + notificação para rodar depois da resposta
+    background_tasks.add_task(
+        processar_triagem_e_notificar,
+        item_id,
+        caminho_final,
+    )
 
     return {
-        "mensagem": "Item publicado e coletores da região alertados",
+        "mensagem": "Upload recebido. O item está em triagem.",
         "item_id": item_id,
+        "status_atual": "processando",
         "foto_url": foto_url,
-        "categoria_detectada": resultado_ia["categoria"],
-        "confianca_ia": resultado_ia["confianca"],
     }
 
 
@@ -361,7 +398,7 @@ def limpar():
 
 
 @app.get("/status")
-def status():
+def status_app():
     return {
         "itens_ativos": len(store.listar_ativos()),
         "coletores_cadastrados": len(listar_coletores()),
