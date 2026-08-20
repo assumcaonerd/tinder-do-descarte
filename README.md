@@ -28,16 +28,26 @@ Facilitar a economia circular local, reduzir descarte irregular e gerar matéria
 git clone https://github.com/assumcaonerd/tinder-do-descarte.git
 cd tinder-do-descarte
 
-# 2. (Opcional) Crie e ative um ambiente virtual
+# 2. Crie e ative um ambiente virtual
 python -m venv .venv
 source .venv/bin/activate          # Linux / macOS
 # .venv\Scripts\activate           # Windows
 
-# 3. Não há dependências externas no momento
-# (as funções de geolocalização usam apenas a biblioteca padrão)
+# 3. Instale as dependências
+pip install -r requirements.txt
 ```
 
-### Como testar o fluxo completo
+### Rodar a API
+
+```bash
+uvicorn descarte.api:app --reload --host 0.0.0.0 --port 8000
+```
+
+Depois abra no navegador:
+- Documentação interativa: http://localhost:8000/docs
+- Status: http://localhost:8000/status
+
+### Exemplo de uso via Python
 
 ```python
 from descarte.main import cadastrar_coletor, publicar_item, aceitar_match, listar_itens_proximos
@@ -74,7 +84,8 @@ descarte/
 ├── store.py           # Armazenamento + expiração
 ├── proximity.py       # Cálculo de distância e matches
 ├── notify.py          # Sistema de notificações
-└── main.py            # Fluxo principal
+├── main.py            # Fluxo principal
+└── api.py             # API HTTP (FastAPI)
 ```
 
 ## Status atual
@@ -83,15 +94,15 @@ descarte/
 - [x] Sistema básico de notificações
 - [x] Store completo + expiração de itens
 - [x] Fluxo de publicação e aceite de match
-- [ ] Interface / API
+- [x] API HTTP com FastAPI
+- [ ] Testes
 - [ ] Persistência real (banco de dados)
 
 ## Próximos passos
 
 1. Criar testes simples
-2. Adicionar uma API HTTP (FastAPI ou Flask)
+2. Persistência com SQLite
 3. Evoluir as notificações para push real (Firebase / OneSignal)
-4. Persistência com SQLite ou PostgreSQL
 
 ## Licença
 
