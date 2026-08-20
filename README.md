@@ -12,6 +12,7 @@ Backend para um aplicativo de logística sustentável. Conecta pessoas que preci
 - Impacto ambiental (CO₂ e peso)
 - Autenticação JWT com papéis (doador / coletor)
 - Docker com volumes persistentes
+- Teste E2E do fluxo completo
 
 ## Stack
 
@@ -42,24 +43,28 @@ POST /auth/registro
 { "email": "coletor@email.com", "senha": "123456", "role": "coletor", "nome": "Cooperativa Centro" }
 ```
 
-2. Faça login (form-urlencoded, como OAuth2):
+2. Faça login:
 ```bash
 POST /auth/login
 username=coletor@email.com&password=123456
 ```
 
-3. Use o token nas rotas protegidas:
+3. Use o token:
 ```
 Authorization: Bearer <access_token>
 ```
 
-### Quem pode o quê
+## Testes
 
-| Rota | Público | Autenticado | Só coletor |
-|------|---------|-------------|------------|
-| `/impacto/*`, `/coletas/historico`, `/itens/proximos` | ✓ | | |
-| `/itens`, `/itens/publicar-com-foto` | | ✓ | |
-| `/coletores`, `/matches/aceitar`, `/coletas/otimizar-rota`, `/coletas/concluir` | | | ✓ |
+```bash
+# Todos os testes
+python -m unittest discover -s tests -v
+
+# Apenas o fluxo E2E completo
+python -m unittest tests.test_fluxo_completo -v
+```
+
+O teste E2E cobre: registro → login → publicação com upload → aceite → rota → conclusão → impacto.
 
 ## Principais endpoints
 
@@ -67,7 +72,6 @@ Authorization: Bearer <access_token>
 |--------|------|-----------|
 | POST | `/auth/registro` | Cadastrar usuário |
 | POST | `/auth/login` | Login (JWT) |
-| GET | `/auth/me` | Dados do usuário logado |
 | POST | `/itens/publicar-com-foto` | Upload + triagem (202) |
 | POST | `/coletas/otimizar-rota` | Ordenar paradas |
 | POST | `/coletas/concluir` | Concluir coleta |
@@ -85,7 +89,7 @@ Authorization: Bearer <access_token>
 - [x] Impacto ambiental
 - [x] Docker
 - [x] Autenticação JWT + roles
-- [ ] Testes E2E
+- [x] Teste E2E do fluxo completo
 
 ## Licença
 
