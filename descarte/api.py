@@ -1,7 +1,7 @@
 import os
 import uuid
 from typing import List, Optional
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, status
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, status, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -15,12 +15,14 @@ from .main import (
 )
 from .db import listar_coletores
 from .models import Item
+from .proximity import find_matches
+from .notify import gerenciador_notificacoes, notification_service
 
 
 app = FastAPI(
     title="Tinder do Descarte",
     description="API para descarte responsável de resíduos volumosos",
-    version="0.2.0",
+    version="0.3.0",
 )
 
 # Diretório de uploads
@@ -40,7 +42,6 @@ def analisar_imagem_com_ia(file_path: str) -> dict:
     """
     nome = file_path.lower()
 
-    # Rejeita se o nome sugerir lixo doméstico/orgânico
     if any(palavra in nome for palavra in ["lixo", "organico", "resto", "comida"]):
         return {
             "valido": False,
@@ -49,7 +50,6 @@ def analisar_imagem_com_ia(file_path: str) -> dict:
             "motivo": "Imagem detectada como possível lixo doméstico ou orgânico",
         }
 
-    # Categorização simples por palavra-chave no nome (apenas para demonstração)
     if any(p in nome for p in ["sofa", "cadeira", "mesa", "madeira", "movel"]):
         categoria = "madeira"
     elif any(p in nome for p in ["tv", "monitor", "notebook", "celular", "eletronico"]):
@@ -110,15 +110,16 @@ class ItemResponse(BaseModel):
         )
 
 
-# ---------- Endpoints ----------
+# ---------- Endpoints HTTP ----------
 
 @app.get("/")
 def root():
     return {
         "app": "Tinder do Descarte",
         "status": "online",
-        "version": "0.2.0",
+        "version": "0.3.0",
         "docs": "/docs",
+        "websocket": "/notificacoes/conectar/{coletor_id}",
     }
 
 
@@ -135,7 +136,7 @@ def criar_coletor(dados: ColetorCreate):
 
 
 @app.post("/itens", summary="Publicar item (com URL de foto já existente)")
-def criar_item(dados: ItemCreate):
+async def criar_item(dados: ItemCreate):
     item_id = publicar_item(
         foto_url=dados.foto_url,
         categoria=dados.categoria,
@@ -143,6 +144,27 @@ def criar_item(dados: ItemCreate):
         lng=dados.lng,
         validade_horas=dados.validade_horas,
     )
+
+    # Dispara alerta em tempo real para os coletores que deram match
+    item = store.get(item_id)
+    if item:
+        coletores = listar_coletores()
+        matches = find_matches(item, coletores)
+        payload = {
+            "evento": "novo_descarte_proximo",
+            "item": {
+                "id": item.id,
+                "categoria": item.categoria,
+                "lat": item.lat,
+                "lng": item.lng,
+                "foto_url": item.foto_url,
+            },
+        }
+        for match in matches:
+            await gerenciador_notificacoes.enviar_alerta_individual(
+                match.coletor_id, payload
+            )
+
     return {"item_id": item_id}
 
 
@@ -153,7 +175,6 @@ async def publicar_item_com_foto(
     file: UploadFile = File(...),
     validade_horas: int = Form(48),
 ):
-    # Validar extensão
     if not file.filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -167,16 +188,13 @@ async def publicar_item_com_foto(
             detail="Apenas imagens JPG ou PNG são permitidas.",
         )
 
-    # Nome único
     novo_nome = f"{uuid.uuid4()}.{extensao}"
     caminho_final = os.path.join(UPLOAD_DIR, novo_nome)
 
-    # Salva o arquivo
     content = await file.read()
     with open(caminho_final, "wb") as buffer:
         buffer.write(content)
 
-    # Triagem pela IA simulada
     resultado_ia = analisar_imagem_com_ia(caminho_final)
 
     if not resultado_ia["valido"]:
@@ -186,10 +204,8 @@ async def publicar_item_com_foto(
             detail=resultado_ia["motivo"] or "Item rejeitado pela análise de imagem.",
         )
 
-    # Monta a URL pública da foto
     foto_url = f"/static/uploads/{novo_nome}"
 
-    # Publica usando o fluxo já existente
     item_id = publicar_item(
         foto_url=foto_url,
         categoria=resultado_ia["categoria"],
@@ -198,8 +214,28 @@ async def publicar_item_com_foto(
         validade_horas=validade_horas,
     )
 
+    # Dispara alerta em tempo real
+    item = store.get(item_id)
+    if item:
+        coletores = listar_coletores()
+        matches = find_matches(item, coletores)
+        payload = {
+            "evento": "novo_descarte_proximo",
+            "item": {
+                "id": item.id,
+                "categoria": item.categoria,
+                "lat": item.lat,
+                "lng": item.lng,
+                "foto_url": item.foto_url,
+            },
+        }
+        for match in matches:
+            await gerenciador_notificacoes.enviar_alerta_individual(
+                match.coletor_id, payload
+            )
+
     return {
-        "mensagem": "Item publicado com sucesso",
+        "mensagem": "Item publicado e coletores da região alertados",
         "item_id": item_id,
         "foto_url": foto_url,
         "categoria_detectada": resultado_ia["categoria"],
@@ -235,4 +271,22 @@ def status():
     return {
         "itens_ativos": len(store.listar_ativos()),
         "coletores_cadastrados": len(listar_coletores()),
+        "coletores_online": gerenciador_notificacoes.coletores_online(),
     }
+
+
+# ---------- WebSocket de notificações em tempo real ----------
+
+@app.websocket("/notificacoes/conectar/{coletor_id}")
+async def websocket_endpoint(websocket: WebSocket, coletor_id: str):
+    await gerenciador_notificacoes.conectar(coletor_id, websocket)
+    try:
+        while True:
+            # Mantém a conexão viva. O cliente pode enviar pings se quiser.
+            data = await websocket.receive_text()
+            await websocket.send_text(f"ok:{data}")
+    except WebSocketDisconnect:
+        gerenciador_notificacoes.desconectar(coletor_id)
+    except Exception as e:
+        print(f"Erro no canal do coletor {coletor_id}: {e}")
+        gerenciador_notificacoes.desconectar(coletor_id)
