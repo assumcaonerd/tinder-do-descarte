@@ -16,13 +16,14 @@ from .main import (
 from .db import listar_coletores
 from .models import Item
 from .proximity import find_matches
-from .notify import gerenciador_notificacoes, notification_service
+from .notify import gerenciador_notificacoes
+from .routing import otimizador_rotas
 
 
 app = FastAPI(
     title="Tinder do Descarte",
     description="API para descarte responsável de resíduos volumosos",
-    version="0.3.0",
+    version="0.4.0",
 )
 
 # Diretório de uploads
@@ -90,6 +91,12 @@ class AceiteRequest(BaseModel):
     coletor_id: str
 
 
+class RequisicaoRota(BaseModel):
+    coletor_lat: float
+    coletor_lng: float
+    item_ids: List[str]
+
+
 class ItemResponse(BaseModel):
     id: str
     foto_url: str
@@ -117,7 +124,7 @@ def root():
     return {
         "app": "Tinder do Descarte",
         "status": "online",
-        "version": "0.3.0",
+        "version": "0.4.0",
         "docs": "/docs",
         "websocket": "/notificacoes/conectar/{coletor_id}",
     }
@@ -145,7 +152,6 @@ async def criar_item(dados: ItemCreate):
         validade_horas=dados.validade_horas,
     )
 
-    # Dispara alerta em tempo real para os coletores que deram match
     item = store.get(item_id)
     if item:
         coletores = listar_coletores()
@@ -214,7 +220,6 @@ async def publicar_item_com_foto(
         validade_horas=validade_horas,
     )
 
-    # Dispara alerta em tempo real
     item = store.get(item_id)
     if item:
         coletores = listar_coletores()
@@ -260,6 +265,55 @@ def itens_proximos(lat: float, lng: float, raio_km: float = 5.0):
     return [ItemResponse.from_model(i) for i in itens]
 
 
+@app.post("/coletas/otimizar-rota", summary="Otimizar ordem de coleta (Nearest Neighbor)")
+async def otimizar_rota_coleta(dados: RequisicaoRota):
+    if not dados.item_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A lista de IDs de itens não pode estar vazia.",
+        )
+
+    itens_para_coleta = []
+    for item_id in dados.item_ids:
+        item = store.get(item_id)
+        if item:
+            itens_para_coleta.append({
+                "id": item.id,
+                "foto_url": item.foto_url,
+                "categoria": item.categoria,
+                "lat": item.lat,
+                "lng": item.lng,
+                "status": item.status,
+            })
+
+    if not itens_para_coleta:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Nenhum dos itens informados foi localizado ou está ativo.",
+        )
+
+    sequencia = otimizador_rotas.planejar_rota(
+        lat_partida=dados.coletor_lat,
+        lng_partida=dados.coletor_lng,
+        itens=itens_para_coleta,
+    )
+
+    distancia_total = sum(
+        item.get("distancia_da_parada_anterior_km", 0) for item in sequencia
+    )
+
+    return {
+        "mensagem": "Rota gerada e otimizada com sucesso",
+        "origem_coletor": {
+            "latitude": dados.coletor_lat,
+            "longitude": dados.coletor_lng,
+        },
+        "total_paradas": len(sequencia),
+        "distancia_total_estimada_km": round(distancia_total, 2),
+        "sequencia_da_rota": sequencia,
+    }
+
+
 @app.post("/manutencao/limpar-expirados", summary="Limpar itens expirados")
 def limpar():
     quantidade = limpar_itens_expirados()
@@ -282,7 +336,6 @@ async def websocket_endpoint(websocket: WebSocket, coletor_id: str):
     await gerenciador_notificacoes.conectar(coletor_id, websocket)
     try:
         while True:
-            # Mantém a conexão viva. O cliente pode enviar pings se quiser.
             data = await websocket.receive_text()
             await websocket.send_text(f"ok:{data}")
     except WebSocketDisconnect:
