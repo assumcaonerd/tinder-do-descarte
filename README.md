@@ -7,9 +7,9 @@ Conecta pessoas que precisam descartar móveis, eletrônicos e materiais de refo
 ## Ideia central
 
 - O doador tira uma foto do item, escolhe a categoria e publica a localização.
-- Coletores e artesãos recebem notificações de itens próximos.
-- Sistema de match simples por proximidade + interesses.
-- Itens expiram automaticamente se ninguém coletar (mantém o mapa limpo).
+- Coletores e artesãos recebem notificações em tempo real via WebSocket.
+- Sistema de match por proximidade + interesses.
+- Itens expiram automaticamente se ninguém coletar.
 - Validação automática da foto por IA simulada (rejeita lixo doméstico).
 
 ## Objetivo
@@ -18,94 +18,51 @@ Facilitar a economia circular local, reduzir descarte irregular e gerar matéria
 
 ## Instalação
 
-### Pré-requisitos
-
-- Python 3.10 ou superior
-
-### Passo a passo
-
 ```bash
-# 1. Clone o repositório
 git clone https://github.com/assumcaonerd/tinder-do-descarte.git
 cd tinder-do-descarte
-
-# 2. Crie e ative um ambiente virtual
 python -m venv .venv
 source .venv/bin/activate          # Linux / macOS
-# .venv\Scripts\activate           # Windows
-
-# 3. Instale as dependências
 pip install -r requirements.txt
 ```
 
-### Rodar a API
+## Rodar a API
 
 ```bash
 uvicorn descarte.api:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Depois abra no navegador:
-- Documentação interativa: http://localhost:8000/docs
+- Documentação: http://localhost:8000/docs
 - Status: http://localhost:8000/status
+- WebSocket: `ws://localhost:8000/notificacoes/conectar/{coletor_id}`
 
-### Endpoint de upload com validação de IA
+## Testar notificação em tempo real
 
-```
-POST /itens/publicar-com-foto
-```
+No console do navegador (F12):
 
-Envia:
-- `latitude` (form)
-- `longitude` (form)
-- `file` (imagem JPG/PNG)
-- `validade_horas` (opcional, padrão 48)
-
-A IA simulada:
-- Rejeita imagens que parecem lixo doméstico/orgânico
-- Detecta automaticamente a categoria (madeira, eletronico, metal, outros)
-- Salva a foto em `/static/uploads/` e retorna a URL pública
-
-### Rodar os testes
-
-```bash
-python -m unittest discover -s tests -v
+```javascript
+const ws = new WebSocket("ws://localhost:8000/notificacoes/conectar/marceneiro_vitoria");
+ws.onmessage = (event) => console.log("🚨 NOVO ALERTA:", JSON.parse(event.data));
 ```
 
-O banco SQLite (`tinder_descarte.db`) é criado automaticamente na primeira execução.
-
-## Estrutura do projeto
-
-```
-descarte/
-├── __init__.py
-├── models.py
-├── store.py
-├── db.py
-├── proximity.py
-├── notify.py
-├── main.py
-└── api.py
-
-static/uploads/     # Fotos enviadas pelos usuários
-tests/
-```
+Depois publique um item próximo (via `/docs` ou `/itens/publicar-com-foto`). O alerta deve aparecer instantaneamente no console.
 
 ## Status atual
 
-- [x] Lógica de geolocalização
-- [x] Sistema de notificações
+- [x] Geolocalização e matching
+- [x] Notificações em memória + WebSocket em tempo real
 - [x] Store + expiração
 - [x] Fluxo de publicação e aceite
 - [x] API HTTP com FastAPI
-- [x] Testes básicos
+- [x] Upload de foto + validação de IA
 - [x] Persistência SQLite
-- [x] Upload de foto + validação simulada de IA
+- [x] Testes básicos
 
 ## Próximos passos possíveis
 
 - Autenticação de usuários
 - Modelo real de visão computacional
-- Push notifications (Firebase / OneSignal)
+- Push nativo (Firebase / OneSignal) como fallback
 - Roteirização inteligente de coletas
 - Painel administrativo
 
