@@ -6,11 +6,11 @@ Conecta pessoas que precisam descartar móveis, eletrônicos e materiais de refo
 
 ## Ideia central
 
-- O doador tira uma foto do item, escolhe a categoria e publica a localização.
-- Coletores e artesãos recebem notificações em tempo real via WebSocket.
+- O doador tira uma foto do item e publica a localização.
+- Coletores recebem notificações em tempo real via WebSocket.
 - Sistema de match por proximidade + interesses.
-- Itens expiram automaticamente se ninguém coletar.
-- Validação automática da foto por IA simulada (rejeita lixo doméstico).
+- Validação automática da foto por IA simulada.
+- Roteirização inteligente das coletas (algoritmo do Vizinho Mais Próximo).
 
 ## Objetivo
 
@@ -22,7 +22,7 @@ Facilitar a economia circular local, reduzir descarte irregular e gerar matéria
 git clone https://github.com/assumcaonerd/tinder-do-descarte.git
 cd tinder-do-descarte
 python -m venv .venv
-source .venv/bin/activate          # Linux / macOS
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -36,34 +36,33 @@ uvicorn descarte.api:app --reload --host 0.0.0.0 --port 8000
 - Status: http://localhost:8000/status
 - WebSocket: `ws://localhost:8000/notificacoes/conectar/{coletor_id}`
 
-## Testar notificação em tempo real
+## Principais endpoints
 
-No console do navegador (F12):
-
-```javascript
-const ws = new WebSocket("ws://localhost:8000/notificacoes/conectar/marceneiro_vitoria");
-ws.onmessage = (event) => console.log("🚨 NOVO ALERTA:", JSON.parse(event.data));
-```
-
-Depois publique um item próximo (via `/docs` ou `/itens/publicar-com-foto`). O alerta deve aparecer instantaneamente no console.
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| POST | `/coletores` | Cadastrar coletor |
+| POST | `/itens` | Publicar item (com URL) |
+| POST | `/itens/publicar-com-foto` | Publicar com upload + IA |
+| POST | `/matches/aceitar` | Aceitar coleta |
+| GET | `/itens/proximos` | Listar itens próximos |
+| POST | `/coletas/otimizar-rota` | Otimizar ordem das paradas |
+| WS | `/notificacoes/conectar/{id}` | Alertas em tempo real |
 
 ## Status atual
 
 - [x] Geolocalização e matching
-- [x] Notificações em memória + WebSocket em tempo real
-- [x] Store + expiração
-- [x] Fluxo de publicação e aceite
-- [x] API HTTP com FastAPI
+- [x] Notificações WebSocket em tempo real
 - [x] Upload de foto + validação de IA
 - [x] Persistência SQLite
+- [x] Roteirização inteligente de coletas
 - [x] Testes básicos
 
 ## Próximos passos possíveis
 
 - Autenticação de usuários
+- Histórico de coletas concluídas
 - Modelo real de visão computacional
-- Push nativo (Firebase / OneSignal) como fallback
-- Roteirização inteligente de coletas
+- Push nativo (Firebase) como fallback
 - Painel administrativo
 
 ## Licença
