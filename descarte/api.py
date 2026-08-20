@@ -18,12 +18,16 @@ from .models import Item
 from .proximity import find_matches
 from .notify import gerenciador_notificacoes
 from .routing import otimizador_rotas
+from .historico import gerenciador_historico, criar_tabela_historico
 
+
+# Garante que a tabela de histórico existe
+criar_tabela_historico()
 
 app = FastAPI(
     title="Tinder do Descarte",
     description="API para descarte responsável de resíduos volumosos",
-    version="0.4.0",
+    version="0.5.0",
 )
 
 # Diretório de uploads
@@ -37,10 +41,6 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # ---------- Simulação de IA de triagem ----------
 
 def analisar_imagem_com_ia(file_path: str) -> dict:
-    """
-    Simula uma chamada de visão computacional.
-    Em produção aqui entraria um modelo real (CLIP, YOLO, etc.).
-    """
     nome = file_path.lower()
 
     if any(palavra in nome for palavra in ["lixo", "organico", "resto", "comida"]):
@@ -97,6 +97,11 @@ class RequisicaoRota(BaseModel):
     item_ids: List[str]
 
 
+class RequisicaoConclusao(BaseModel):
+    item_id: str
+    coletor_id: str
+
+
 class ItemResponse(BaseModel):
     id: str
     foto_url: str
@@ -124,7 +129,7 @@ def root():
     return {
         "app": "Tinder do Descarte",
         "status": "online",
-        "version": "0.4.0",
+        "version": "0.5.0",
         "docs": "/docs",
         "websocket": "/notificacoes/conectar/{coletor_id}",
     }
@@ -276,7 +281,7 @@ async def otimizar_rota_coleta(dados: RequisicaoRota):
     itens_para_coleta = []
     for item_id in dados.item_ids:
         item = store.get(item_id)
-        if item:
+        if item and item.status in ("ativo", "aceito"):
             itens_para_coleta.append({
                 "id": item.id,
                 "foto_url": item.foto_url,
@@ -311,6 +316,30 @@ async def otimizar_rota_coleta(dados: RequisicaoRota):
         "total_paradas": len(sequencia),
         "distancia_total_estimada_km": round(distancia_total, 2),
         "sequencia_da_rota": sequencia,
+    }
+
+
+@app.post("/coletas/concluir", summary="Concluir coleta e gerar pontos verdes")
+def concluir_descarte(dados: RequisicaoConclusao):
+    resultado = gerenciador_historico.concluir_coleta(dados.item_id, dados.coletor_id)
+
+    if not resultado["sucesso"]:
+        raise HTTPException(status_code=400, detail=resultado["erro"])
+
+    return resultado
+
+
+@app.get("/coletas/historico", summary="Listar coletas já concluídas")
+def consultar_historico(limite: int = 50):
+    return gerenciador_historico.listar_historico(limite)
+
+
+@app.get("/coletas/pontos/{coletor_id}", summary="Total de pontos verdes de um coletor")
+def consultar_pontos_coletor(coletor_id: str):
+    pontos = gerenciador_historico.total_pontos_por_coletor(coletor_id)
+    return {
+        "coletor_id": coletor_id,
+        "total_moedas_verdes": pontos,
     }
 
 
