@@ -35,6 +35,30 @@ def cadastrar_coletor(
     return cid
 
 
+def criar_item_temporario(
+    foto_url: str,
+    lat: float,
+    lng: float,
+    validade_horas: int = 48,
+) -> str:
+    """Cria item com status 'processando' (ainda não aparece no mapa)."""
+    item_id = str(uuid4())
+    agora = datetime.utcnow()
+
+    item = Item(
+        id=item_id,
+        foto_url=foto_url,
+        categoria="processando",
+        lat=lat,
+        lng=lng,
+        created_at=agora,
+        expires_at=agora + timedelta(hours=validade_horas),
+        status="processando",
+    )
+    store.add(item)
+    return item_id
+
+
 def publicar_item(
     foto_url: str,
     categoria: str,
@@ -42,9 +66,7 @@ def publicar_item(
     lng: float,
     validade_horas: int = 48,
 ) -> str:
-    """Publica um novo item, encontra matches e dispara notificações.
-    Retorna o id do item criado.
-    """
+    """Publica um novo item já ativo, encontra matches e dispara notificações."""
     item_id = str(uuid4())
     agora = datetime.utcnow()
 
@@ -61,7 +83,6 @@ def publicar_item(
 
     store.add(item)
 
-    # Encontra coletores próximos e com interesse
     coletores = listar_coletores()
     matches = find_matches(item, coletores)
 
@@ -71,10 +92,32 @@ def publicar_item(
     return item_id
 
 
+def ativar_item_e_notificar(item_id: str, categoria: str) -> bool:
+    """Ativa um item que estava em processamento e dispara alertas."""
+    sucesso = store.atualizar_status(item_id, status="ativo", categoria=categoria)
+    if not sucesso:
+        return False
+
+    item = store.get(item_id)
+    if not item:
+        return False
+
+    coletores = listar_coletores()
+    matches = find_matches(item, coletores)
+
+    for match in matches:
+        notify_coletor(match.coletor_id, item, match.distancia_km)
+
+    return True
+
+
+def rejeitar_item(item_id: str) -> bool:
+    """Marca item como rejeitado pela IA."""
+    return store.atualizar_status(item_id, status="rejeitado")
+
+
 def aceitar_match(item_id: str, coletor_id: str) -> bool:
-    """Coletor aceita coletar o item.
-    Retorna True se o aceite foi bem-sucedido.
-    """
+    """Coletor aceita coletar o item."""
     sucesso = store.marcar_aceito(item_id)
 
     if sucesso:
@@ -85,10 +128,10 @@ def aceitar_match(item_id: str, coletor_id: str) -> bool:
 
 
 def listar_itens_proximos(lat: float, lng: float, raio_km: float = 5.0) -> List[Item]:
-    """Útil para o app do coletor ver o que tem perto."""
+    """Lista apenas itens ativos próximos."""
     return store.get_active_near(lat, lng, raio_km)
 
 
 def limpar_itens_expirados() -> int:
-    """Deve ser chamado periodicamente (cron ou background task)."""
+    """Deve ser chamado periodicamente."""
     return store.expire_old()
