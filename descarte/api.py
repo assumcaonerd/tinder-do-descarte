@@ -8,9 +8,9 @@ from .main import (
     aceitar_match,
     listar_itens_proximos,
     limpar_itens_expirados,
-    coletores,
     store,
 )
+from .db import listar_coletores
 from .models import Item
 
 
@@ -103,7 +103,10 @@ def criar_item(dados: ItemCreate):
 def aceitar(dados: AceiteRequest):
     sucesso = aceitar_match(dados.item_id, dados.coletor_id)
     if not sucesso:
-        raise HTTPException(status_code=400, detail="Não foi possível aceitar o item (já aceito, expirado ou inexistente)")
+        raise HTTPException(
+            status_code=400,
+            detail="Não foi possível aceitar o item (já aceito, expirado ou inexistente)",
+        )
     return {"ok": True, "item_id": dados.item_id}
 
 
@@ -123,5 +126,5 @@ def limpar():
 def status():
     return {
         "itens_ativos": len(store.listar_ativos()),
-        "coletores_cadastrados": len(coletores),
+        "coletores_cadastrados": len(listar_coletores()),
     }
