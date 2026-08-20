@@ -9,6 +9,8 @@ env/
 # Banco local
 tinder_descarte.db
 *.db
+data/*
+!data/.gitkeep
 
 # Uploads de teste
 static/uploads/*
