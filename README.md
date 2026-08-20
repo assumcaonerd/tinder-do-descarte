@@ -10,6 +10,7 @@ Conecta pessoas que precisam descartar móveis, eletrônicos e materiais de refo
 - Coletores e artesãos recebem notificações de itens próximos.
 - Sistema de match simples por proximidade + interesses.
 - Itens expiram automaticamente se ninguém coletar (mantém o mapa limpo).
+- Validação automática da foto por IA simulada (rejeita lixo doméstico).
 
 ## Objetivo
 
@@ -47,6 +48,23 @@ Depois abra no navegador:
 - Documentação interativa: http://localhost:8000/docs
 - Status: http://localhost:8000/status
 
+### Endpoint de upload com validação de IA
+
+```
+POST /itens/publicar-com-foto
+```
+
+Envia:
+- `latitude` (form)
+- `longitude` (form)
+- `file` (imagem JPG/PNG)
+- `validade_horas` (opcional, padrão 48)
+
+A IA simulada:
+- Rejeita imagens que parecem lixo doméstico/orgânico
+- Detecta automaticamente a categoria (madeira, eletronico, metal, outros)
+- Salva a foto em `/static/uploads/` e retorna a URL pública
+
 ### Rodar os testes
 
 ```bash
@@ -60,34 +78,33 @@ O banco SQLite (`tinder_descarte.db`) é criado automaticamente na primeira exec
 ```
 descarte/
 ├── __init__.py
-├── models.py          # Item, Coletor, Match
-├── store.py           # Store em memória (legado)
-├── db.py              # Persistência SQLite
-├── proximity.py       # Cálculo de distância e matches
-├── notify.py          # Sistema de notificações
-├── main.py            # Fluxo principal
-└── api.py             # API HTTP (FastAPI)
+├── models.py
+├── store.py
+├── db.py
+├── proximity.py
+├── notify.py
+├── main.py
+└── api.py
 
+static/uploads/     # Fotos enviadas pelos usuários
 tests/
-├── test_proximity.py
-├── test_store.py
-└── test_main.py
 ```
 
 ## Status atual
 
-- [x] Lógica de geolocalização (haversine + find_matches)
-- [x] Sistema básico de notificações
-- [x] Store completo + expiração de itens
-- [x] Fluxo de publicação e aceite de match
+- [x] Lógica de geolocalização
+- [x] Sistema de notificações
+- [x] Store + expiração
+- [x] Fluxo de publicação e aceite
 - [x] API HTTP com FastAPI
 - [x] Testes básicos
-- [x] Persistência real com SQLite
+- [x] Persistência SQLite
+- [x] Upload de foto + validação simulada de IA
 
 ## Próximos passos possíveis
 
 - Autenticação de usuários
-- Upload real de fotos
+- Modelo real de visão computacional
 - Push notifications (Firebase / OneSignal)
 - Roteirização inteligente de coletas
 - Painel administrativo
