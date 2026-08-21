@@ -1,6 +1,8 @@
 import os
 import uuid
 from typing import List, Optional
+from pathlib import Path
+
 from fastapi import (
     FastAPI,
     HTTPException,
@@ -15,7 +17,8 @@ from fastapi import (
 )
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, EmailStr
+from fastapi.responses import RedirectResponse, FileResponse
+from pydantic import BaseModel, Field
 
 from .main import (
     cadastrar_coletor,
@@ -52,15 +55,17 @@ criar_tabela_usuarios()
 app = FastAPI(
     title="Tinder do Descarte",
     description="API para descarte responsável de resíduos volumosos",
-    version="0.8.0",
+    version="0.9.0",
 )
 
 UPLOAD_DIR = "static/uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
+if FRONTEND_DIR.exists():
+    app.mount("/app", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
 
-# ---------- Simulação de IA de triagem ----------
 
 def analisar_imagem_com_ia(file_path: str) -> dict:
     nome = file_path.lower()
@@ -89,8 +94,6 @@ def analisar_imagem_com_ia(file_path: str) -> dict:
         "motivo": None,
     }
 
-
-# ---------- Background Task ----------
 
 async def processar_triagem_e_notificar(
     item_id: str,
@@ -132,8 +135,6 @@ async def processar_triagem_e_notificar(
     else:
         print(f"[Background] Falha ao ativar item {item_id}.")
 
-
-# ---------- Schemas ----------
 
 class UsuarioCreate(BaseModel):
     email: str
@@ -199,7 +200,18 @@ class ItemResponse(BaseModel):
         )
 
 
-# ---------- Auth ----------
+@app.get("/")
+def root():
+    if FRONTEND_DIR.exists():
+        return RedirectResponse(url="/app/")
+    return {
+        "app": "Tinder do Descarte",
+        "status": "online",
+        "version": "0.9.0",
+        "docs": "/docs",
+        "frontend": "/app/",
+    }
+
 
 @app.post("/auth/registro", summary="Cadastrar usuário (doador ou coletor)")
 def registro(dados: UsuarioCreate):
@@ -249,25 +261,11 @@ def me(usuario: dict = Depends(obter_usuario_atual)):
     return usuario
 
 
-# ---------- Endpoints HTTP ----------
-
-@app.get("/")
-def root():
-    return {
-        "app": "Tinder do Descarte",
-        "status": "online",
-        "version": "0.8.0",
-        "docs": "/docs",
-        "websocket": "/notificacoes/conectar/{coletor_id}",
-    }
-
-
 @app.post("/coletores", summary="Cadastrar coletor (perfil de localização)")
 def criar_coletor(
     dados: ColetorCreate,
     usuario: dict = Depends(exigir_coletor),
 ):
-    # Usa o ID do usuário autenticado como coletor_id se não for informado
     cid = cadastrar_coletor(
         lat=dados.lat,
         lng=dados.lng,
@@ -494,8 +492,6 @@ def status_app():
         "coletores_online": gerenciador_notificacoes.coletores_online(),
     }
 
-
-# ---------- WebSocket de notificações em tempo real ----------
 
 @app.websocket("/notificacoes/conectar/{coletor_id}")
 async def websocket_endpoint(websocket: WebSocket, coletor_id: str):
