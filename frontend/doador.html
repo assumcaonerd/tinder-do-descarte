@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Painel do Doador · Tinder do Descarte</title>
+  <link rel="stylesheet" href="/app/css/style.css" />
+</head>
+<body>
+  <nav>
+    <div class="brand">♻️ Tinder do Descarte</div>
+    <div class="links">
+      <a href="/app/">Impacto</a>
+      <a href="/app/doador.html" class="active">Doador</a>
+      <a href="/app/coletor.html">Coletor</a>
+    </div>
+  </nav>
+
+  <div class="container" style="padding-top:1.5rem">
+    <!-- Auth -->
+    <div class="card" id="auth-box">
+      <h2>Entrar como doador</h2>
+      <div class="grid grid-2">
+        <div>
+          <label>E-mail</label>
+          <input id="email" type="email" placeholder="voce@email.com" />
+        </div>
+        <div>
+          <label>Senha</label>
+          <input id="senha" type="password" placeholder="mín. 6 caracteres" />
+        </div>
+      </div>
+      <div style="display:flex;gap:.6rem;flex-wrap:wrap">
+        <button class="btn" id="btn-login">Entrar</button>
+        <button class="btn btn-secondary" id="btn-reg">Criar conta doador</button>
+      </div>
+    </div>
+
+    <div class="card hidden" id="painel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem">
+        <h2 style="margin:0">Publicar descarte</h2>
+        <button class="btn btn-secondary" id="btn-sair" style="font-size:.85rem">Sair</button>
+      </div>
+
+      <div class="dropzone" id="dropzone">
+        <p>Arraste a foto aqui ou clique para escolher</p>
+        <p style="font-size:.8rem;margin-top:.35rem">JPG ou PNG · o sistema categoriza automaticamente</p>
+        <input type="file" id="file" accept="image/jpeg,image/png" hidden />
+        <img id="preview" class="hidden" alt="prévia" />
+      </div>
+
+      <div class="grid grid-2">
+        <div>
+          <label>Latitude</label>
+          <input id="lat" type="number" step="any" placeholder="-20.3155" />
+        </div>
+        <div>
+          <label>Longitude</label>
+          <input id="lng" type="number" step="any" placeholder="-40.3128" />
+        </div>
+      </div>
+      <button class="btn btn-secondary" id="btn-geo" type="button" style="margin-bottom:1rem">
+        Usar minha localização
+      </button>
+
+      <button class="btn" id="btn-publicar" disabled>Publicar item</button>
+
+      <div id="resultado" class="hidden" style="margin-top:1.25rem"></div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+  <script src="/app/js/api.js"></script>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let arquivo = null;
+
+    function mostrarPainel() {
+      const u = getUser();
+      if (u && getToken()) {
+        $("auth-box").classList.add("hidden");
+        $("painel").classList.remove("hidden");
+      } else {
+        $("auth-box").classList.remove("hidden");
+        $("painel").classList.add("hidden");
+      }
+    }
+
+    $("btn-login").onclick = async () => {
+      try {
+        await login($("email").value.trim(), $("senha").value);
+        toast("Login ok");
+        mostrarPainel();
+      } catch (e) {
+        toast(e.message, "error");
+      }
+    };
+
+    $("btn-reg").onclick = async () => {
+      try {
+        await registrar(
+          $("email").value.trim(),
+          $("senha").value,
+          "doador",
+          "Doador"
+        );
+        await login($("email").value.trim(), $("senha").value);
+        toast("Conta criada");
+        mostrarPainel();
+      } catch (e) {
+        toast(e.message, "error");
+      }
+    };
+
+    $("btn-sair").onclick = () => {
+      clearSession();
+      mostrarPainel();
+    };
+
+    const dz = $("dropzone");
+    const fileInput = $("file");
+
+    dz.onclick = () => fileInput.click();
+    dz.ondragover = (e) => {
+      e.preventDefault();
+      dz.classList.add("dragover");
+    };
+    dz.ondragleave = () => dz.classList.remove("dragover");
+    dz.ondrop = (e) => {
+      e.preventDefault();
+      dz.classList.remove("dragover");
+      if (e.dataTransfer.files[0]) escolherArquivo(e.dataTransfer.files[0]);
+    };
+    fileInput.onchange = () => {
+      if (fileInput.files[0]) escolherArquivo(fileInput.files[0]);
+    };
+
+    function escolherArquivo(f) {
+      arquivo = f;
+      const url = URL.createObjectURL(f);
+      const img = $("preview");
+      img.src = url;
+      img.classList.remove("hidden");
+      $("btn-publicar").disabled = false;
+    }
+
+    $("btn-geo").onclick = async () => {
+      try {
+        const g = await getGeo();
+        $("lat").value = g.lat.toFixed(6);
+        $("lng").value = g.lng.toFixed(6);
+        toast("Localização capturada");
+      } catch {
+        toast("Não foi possível obter a localização", "error");
+      }
+    };
+
+    $("btn-publicar").onclick = async () => {
+      const lat = parseFloat($("lat").value);
+      const lng = parseFloat($("lng").value);
+      if (!arquivo || Number.isNaN(lat) || Number.isNaN(lng)) {
+        toast("Foto e coordenadas são obrigatórias", "error");
+        return;
+      }
+
+      const fd = new FormData();
+      fd.append("latitude", lat);
+      fd.append("longitude", lng);
+      fd.append("file", arquivo);
+      fd.append("validade_horas", 48);
+
+      $("btn-publicar").disabled = true;
+      $("btn-publicar").textContent = "Enviando…";
+
+      try {
+        const data = await api("/itens/publicar-com-foto", {
+          method: "POST",
+          body: fd,
+        });
+
+        const box = $("resultado");
+        box.classList.remove("hidden");
+        box.innerHTML = `
+          <div class="alert-item">
+            <strong>Upload recebido</strong><br />
+            <small>ID: ${data.item_id}</small><br />
+            Status: <span class="badge badge-processando">${data.status_atual}</span><br />
+            <small>A IA está triando em segundo plano. Em poucos segundos o item entra no mapa se for aprovado.</small>
+          </div>`;
+        toast("Item enviado para triagem");
+      } catch (e) {
+        toast(e.message, "error");
+      } finally {
+        $("btn-publicar").disabled = false;
+        $("btn-publicar").textContent = "Publicar item";
+      }
+    };
+
+    mostrarPainel();
+  </script>
+</body>
+</html>
