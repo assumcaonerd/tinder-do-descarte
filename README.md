@@ -1,24 +1,31 @@
 # Tinder do Descarte
 
-Backend para um aplicativo de logística sustentável. Conecta pessoas que precisam descartar móveis, eletrônicos e materiais de reforma a cooperativas de reciclagem e artesãos locais.
+Backend + interface web para logística sustentável de resíduos volumosos.
 
-## O que o sistema faz
+Conecta doadores a cooperativas e artesãos locais com match geográfico, notificações em tempo real, roteirização e métricas de impacto ambiental.
 
-- Upload com triagem assíncrona (HTTP 202 + BackgroundTasks)
-- Match geográfico (Haversine)
-- Notificações em tempo real (WebSocket)
-- Roteirização (Nearest Neighbor)
-- Histórico + Moedas Verdes
-- Impacto ambiental (CO₂ e peso)
-- Autenticação JWT com papéis (doador / coletor)
-- Docker com volumes persistentes
-- Teste E2E do fluxo completo
+## Interface web
+
+Com a API no ar, abra:
+
+| Página | URL |
+|--------|-----|
+| Dashboard de impacto | http://localhost:8000/app/ |
+| Painel do doador | http://localhost:8000/app/doador.html |
+| Painel do coletor | http://localhost:8000/app/coletor.html |
+| API docs | http://localhost:8000/docs |
+
+### O que cada painel faz
+
+- **Impacto** — contadores públicos (kg, CO₂, árvores) e últimas coletas
+- **Doador** — login, upload de foto (arrastar/soltar), geolocalização e publicação assíncrona
+- **Coletor** — login, perfil de raio, WebSocket ao vivo, lista de itens, rota otimizada, aceite e conclusão
 
 ## Stack
 
-Python · FastAPI · SQLite · WebSockets · JWT · Docker
+Python · FastAPI · SQLite · WebSockets · JWT · Docker · HTML/CSS/JS
 
-## Instalação local
+## Instalação
 
 ```bash
 git clone https://github.com/assumcaonerd/tinder-do-descarte.git
@@ -35,48 +42,18 @@ uvicorn descarte.api:app --reload --host 0.0.0.0 --port 8000
 docker compose up --build
 ```
 
-## Autenticação
+## Fluxo rápido de demo
 
-1. Cadastre um usuário:
-```bash
-POST /auth/registro
-{ "email": "coletor@email.com", "senha": "123456", "role": "coletor", "nome": "Cooperativa Centro" }
-```
-
-2. Faça login:
-```bash
-POST /auth/login
-username=coletor@email.com&password=123456
-```
-
-3. Use o token:
-```
-Authorization: Bearer <access_token>
-```
+1. Abra `/app/doador.html` → crie conta doador → publique uma foto com localização
+2. Abra `/app/coletor.html` (outra aba) → crie conta coletor → salve o perfil → veja o alerta no WebSocket
+3. Aceite o item → otimize a rota → conclua a coleta
+4. Volte em `/app/` e veja o impacto atualizado
 
 ## Testes
 
 ```bash
-# Todos os testes
 python -m unittest discover -s tests -v
-
-# Apenas o fluxo E2E completo
-python -m unittest tests.test_fluxo_completo -v
 ```
-
-O teste E2E cobre: registro → login → publicação com upload → aceite → rota → conclusão → impacto.
-
-## Principais endpoints
-
-| Método | Rota | Descrição |
-|--------|------|-----------|
-| POST | `/auth/registro` | Cadastrar usuário |
-| POST | `/auth/login` | Login (JWT) |
-| POST | `/itens/publicar-com-foto` | Upload + triagem (202) |
-| POST | `/coletas/otimizar-rota` | Ordenar paradas |
-| POST | `/coletas/concluir` | Concluir coleta |
-| GET | `/impacto/global` | Impacto ambiental |
-| WS | `/notificacoes/conectar/{id}` | Alertas em tempo real |
 
 ## Status
 
@@ -89,7 +66,8 @@ O teste E2E cobre: registro → login → publicação com upload → aceite →
 - [x] Impacto ambiental
 - [x] Docker
 - [x] Autenticação JWT + roles
-- [x] Teste E2E do fluxo completo
+- [x] Teste E2E
+- [x] Frontend (doador / coletor / impacto)
 
 ## Licença
 
