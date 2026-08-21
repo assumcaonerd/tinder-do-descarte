@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tinder do Descarte</title>
+  <link rel="stylesheet" href="/app/css/style.css" />
+</head>
+<body>
+  <nav>
+    <div class="brand">♻️ Tinder do Descarte</div>
+    <div class="links">
+      <a href="/app/" class="active">Impacto</a>
+      <a href="/app/doador.html">Doador</a>
+      <a href="/app/coletor.html">Coletor</a>
+      <a href="/docs" target="_blank">API</a>
+    </div>
+  </nav>
+
+  <div class="hero">
+    <h1>Economia circular no seu bairro</h1>
+    <p>
+      Conectamos quem precisa descartar móveis e eletrônicos a cooperativas
+      e artesãos locais. Menos aterro, mais reaproveitamento.
+    </p>
+    <div style="display:flex;gap:.75rem;justify-content:center;flex-wrap:wrap">
+      <a class="btn" href="/app/doador.html">Quero doar</a>
+      <a class="btn btn-secondary" href="/app/coletor.html">Sou coletor</a>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="card">
+      <h2>Impacto ambiental global</h2>
+      <div class="grid grid-3" id="stats">
+        <div class="stat">
+          <div class="value" id="stat-itens">0</div>
+          <div class="label">Descartes concluídos</div>
+        </div>
+        <div class="stat">
+          <div class="value" id="stat-peso">0</div>
+          <div class="label">Kg desviados de aterro</div>
+        </div>
+        <div class="stat">
+          <div class="value" id="stat-co2">0</div>
+          <div class="label">Kg de CO₂ poupados</div>
+        </div>
+      </div>
+      <p style="text-align:center;color:var(--muted);margin-top:1rem;font-size:.9rem">
+        Equivalente a <strong id="stat-arvores">0</strong> árvores absorvendo CO₂ por um ano
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>Últimas coletas</h2>
+      <div id="historico">Carregando…</div>
+    </div>
+  </div>
+
+  <div class="footer">Tinder do Descarte · MVP de logística sustentável</div>
+  <div id="toast"></div>
+
+  <script src="/app/js/api.js"></script>
+  <script>
+    async function carregarImpacto() {
+      try {
+        const data = await api("/impacto/global");
+        animateValue(document.getElementById("stat-itens"), data.total_descartes_concluidos || 0);
+        animateValue(document.getElementById("stat-peso"), data.massa_total_desviada_aterros_kg || 0);
+        animateValue(document.getElementById("stat-co2"), data.co2_total_poupado_kg || 0);
+        document.getElementById("stat-arvores").textContent =
+          formatNum(data.equivalencia_arvores_salvas_ano || 0, 1);
+      } catch (e) {
+        toast("Não foi possível carregar o impacto", "error");
+      }
+    }
+
+    async function carregarHistorico() {
+      const el = document.getElementById("historico");
+      try {
+        const lista = await api("/coletas/historico?limite=8");
+        if (!lista.length) {
+          el.innerHTML = "<p style='color:var(--muted)'>Nenhuma coleta concluída ainda.</p>";
+          return;
+        }
+        el.innerHTML = lista
+          .map(
+            (h) => `
+          <div class="item-card">
+            <div class="meta">
+              <strong>${h.categoria || "item"}</strong>
+              <small>
+                Coletor: ${h.coletor_id?.slice(0, 8) || "—"}…
+                · ${h.pontos_verdes || 0} pts
+                · ${h.data_conclusao ? new Date(h.data_conclusao).toLocaleString("pt-BR") : ""}
+              </small>
+            </div>
+          </div>`
+          )
+          .join("");
+      } catch {
+        el.innerHTML = "<p style='color:var(--muted)'>Histórico indisponível.</p>";
+      }
+    }
+
+    carregarImpacto();
+    carregarHistorico();
+  </script>
+</body>
+</html>
