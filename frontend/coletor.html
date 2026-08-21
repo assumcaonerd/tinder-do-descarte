@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Painel do Coletor · Tinder do Descarte</title>
+  <link rel="stylesheet" href="/app/css/style.css" />
+</head>
+<body>
+  <nav>
+    <div class="brand">♻️ Tinder do Descarte</div>
+    <div class="links">
+      <a href="/app/">Impacto</a>
+      <a href="/app/doador.html">Doador</a>
+      <a href="/app/coletor.html" class="active">Coletor</a>
+    </div>
+  </nav>
+
+  <div class="container" style="padding-top:1.5rem">
+    <div class="card" id="auth-box">
+      <h2>Entrar como coletor</h2>
+      <div class="grid grid-2">
+        <div>
+          <label>E-mail</label>
+          <input id="email" type="email" placeholder="cooperativa@email.com" />
+        </div>
+        <div>
+          <label>Senha</label>
+          <input id="senha" type="password" placeholder="mín. 6 caracteres" />
+        </div>
+      </div>
+      <div style="display:flex;gap:.6rem;flex-wrap:wrap">
+        <button class="btn" id="btn-login">Entrar</button>
+        <button class="btn btn-secondary" id="btn-reg">Criar conta coletor</button>
+      </div>
+    </div>
+
+    <div id="painel" class="hidden">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem">
+          <h2 style="margin:0">Painel do coletor</h2>
+          <div style="display:flex;gap:.5rem;align-items:center">
+            <span class="ws-status offline" id="ws-status">WebSocket offline</span>
+            <button class="btn btn-secondary" id="btn-sair" style="font-size:.85rem">Sair</button>
+          </div>
+        </div>
+
+        <p style="color:var(--muted);font-size:.9rem;margin:1rem 0 .75rem">
+          Cadastre sua posição e interesses para aparecer nos matches.
+        </p>
+        <div class="grid grid-2">
+          <div>
+            <label>Latitude</label>
+            <input id="lat" type="number" step="any" value="-20.3155" />
+          </div>
+          <div>
+            <label>Longitude</label>
+            <input id="lng" type="number" step="any" value="-40.3128" />
+          </div>
+        </div>
+        <button class="btn btn-secondary" id="btn-geo" type="button" style="margin-bottom:.75rem">
+          Usar minha localização
+        </button>
+        <button class="btn" id="btn-salvar-perfil">Salvar perfil de coleta</button>
+      </div>
+
+      <div class="card">
+        <h2>Alertas em tempo real</h2>
+        <div id="feed"><p style="color:var(--muted)">Aguardando alertas…</p></div>
+      </div>
+
+      <div class="card">
+        <h2>Itens próximos</h2>
+        <button class="btn btn-secondary" id="btn-atualizar" style="margin-bottom:1rem">Atualizar lista</button>
+        <div id="lista-itens"></div>
+        <button class="btn" id="btn-rota" style="margin-top:.75rem" disabled>
+          Otimizar rota dos selecionados
+        </button>
+        <div id="rota-resultado" class="hidden" style="margin-top:1rem"></div>
+      </div>
+
+      <div class="card">
+        <h2>Meus pontos</h2>
+        <div class="stat" style="text-align:left;padding:0">
+          <div class="value" id="meus-pontos">0</div>
+          <div class="label">Moedas Verdes acumuladas</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+  <script src="/app/js/api.js"></script>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let ws = null;
+    const selecionados = new Set();
+
+    function mostrarPainel() {
+      const u = getUser();
+      if (u && getToken() && u.role === "coletor") {
+        $("auth-box").classList.add("hidden");
+        $("painel").classList.remove("hidden");
+        conectarWs();
+        carregarItens();
+        carregarPontos();
+      } else if (u && u.role !== "coletor") {
+        toast("Esta área é só para coletores", "error");
+        clearSession();
+        $("auth-box").classList.remove("hidden");
+        $("painel").classList.add("hidden");
+      } else {
+        $("auth-box").classList.remove("hidden");
+        $("painel").classList.add("hidden");
+      }
+    }
+
+    $("btn-login").onclick = async () => {
+      try {
+        const data = await login($("email").value.trim(), $("senha").value);
+        if (data.role !== "coletor") {
+          clearSession();
+          toast("Use uma conta de coletor", "error");
+          return;
+        }
+        toast("Login ok");
+        mostrarPainel();
+      } catch (e) {
+        toast(e.message, "error");
+      }
+    };
+
+    $("btn-reg").onclick = async () => {
+      try {
+        await registrar(
+          $("email").value.trim(),
+          $("senha").value,
+          "coletor",
+          "Coletor"
+        );
+        await login($("email").value.trim(), $("senha").value);
+        toast("Conta de coletor criada");
+        mostrarPainel();
+      } catch (e) {
+        toast(e.message, "error");
+      }
+    };
+
+    $("btn-sair").onclick = () => {
+      if (ws) ws.close();
+      clearSession();
+      mostrarPainel();
+    };
+
+    $("btn-geo").onclick = async () => {
+      try {
+        const g = await getGeo();
+        $("lat").value = g.lat.toFixed(6);
+        $("lng").value = g.lng.toFixed(6);
+        toast("Localização capturada");
+      } catch {
+        toast("Não foi possível obter a localização", "error");
+      }
+    };
+
+    $("btn-salvar-perfil").onclick = async () => {
+      try {
+        await api("/coletores", {
+          method: "POST",
+          body: JSON.stringify({
+            lat: parseFloat($("lat").value),
+            lng: parseFloat($("lng").value),
+            interesses: ["madeira", "eletronico", "metal", "outros"],
+            raio_km: 10,
+          }),
+        });
+        toast("Perfil de coleta salvo");
+        conectarWs();
+        carregarItens();
+      } catch (e) {
+        toast(e.message, "error");
+      }
+    };
+
+    function conectarWs() {
+      const u = getUser();
+      if (!u) return;
+      if (ws) {
+        try { ws.close(); } catch {}
+      }
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      ws = new WebSocket(`${proto}://${location.host}/notificacoes/conectar/${u.usuario_id}`);
+
+      const st = $("ws-status");
+      ws.onopen = () => {
+        st.textContent = "WebSocket online";
+        st.className = "ws-status online";
+      };
+      ws.onclose = () => {
+        st.textContent = "WebSocket offline";
+        st.className = "ws-status offline";
+      };
+      ws.onmessage = (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+          if (data.evento === "novo_descarte_proximo") {
+            adicionarAlerta(data.item);
+            carregarItens();
+          }
+        } catch {
+          // heartbeat ou texto simples
+        }
+      };
+    }
+
+    function adicionarAlerta(item) {
+      const feed = $("feed");
+      if (feed.querySelector("p")) feed.innerHTML = "";
+      const div = document.createElement("div");
+      div.className = "alert-item";
+      div.innerHTML = `
+        <strong>Novo descarte próximo</strong><br />
+        <small>${item.categoria || "item"} · ${item.id?.slice(0, 8) || ""}…</small>
+      `;
+      feed.prepend(div);
+      toast("Novo item disponível!");
+    }
+
+    async function carregarItens() {
+      const lat = parseFloat($("lat").value) || -20.3155;
+      const lng = parseFloat($("lng").value) || -40.3128;
+      const el = $("lista-itens");
+      try {
+        const itens = await api(`/itens/proximos?lat=${lat}&lng=${lng}&raio_km=10`);
+        if (!itens.length) {
+          el.innerHTML = "<p style='color:var(--muted)'>Nenhum item ativo por perto.</p>";
+          $("btn-rota").disabled = true;
+          return;
+        }
+        el.innerHTML = itens
+          .map((i) => {
+            const checked = selecionados.has(i.id) ? "checked" : "";
+            const foto = i.foto_url || "";
+            return `
+            <div class="item-card">
+              ${foto ? `<img src="${foto}" alt="" onerror="this.style.display='none'" />` : ""}
+              <div class="meta">
+                <strong>${i.categoria}</strong>
+                <small>${i.id.slice(0, 8)}… · <span class="badge badge-${i.status}">${i.status}</span></small>
+                <div style="margin-top:.4rem">
+                  <label style="display:inline-flex;align-items:center;gap:.35rem;cursor:pointer">
+                    <input type="checkbox" data-id="${i.id}" ${checked} onchange="toggleItem(this)" />
+                    Selecionar
+                  </label>
+                  <button class="btn btn-secondary" style="margin-left:.5rem;padding:.3rem .6rem;font-size:.8rem"
+                    onclick="aceitar('${i.id}')">Aceitar</button>
+                  <button class="btn" style="margin-left:.35rem;padding:.3rem .6rem;font-size:.8rem"
+                    onclick="concluir('${i.id}')">Concluir</button>
+                </div>
+              </div>
+            </div>`;
+          })
+          .join("");
+        $("btn-rota").disabled = selecionados.size === 0;
+      } catch (e) {
+        el.innerHTML = `<p style='color:var(--muted)'>${e.message}</p>`;
+      }
+    }
+
+    window.toggleItem = (cb) => {
+      if (cb.checked) selecionados.add(cb.dataset.id);
+      else selecionados.delete(cb.dataset.id);
+      $("btn-rota").disabled = selecionados.size === 0;
+    };
+
+    window.aceitar = async (id) => {
+      try {
+        await api("/matches/aceitar", {
+          method: "POST",
+          body: JSON.stringify({ item_id: id }),
+        });
+        toast("Item aceito");
+        carregarItens();
+      } catch (e) {
+        toast(e.message, "error");
+      }
+    };
+
+    window.concluir = async (id) => {
+      try {
+        const r = await api("/coletas/concluir", {
+          method: "POST",
+          body: JSON.stringify({ item_id: id }),
+        });
+        toast(`Coleta concluída · +${r.dados?.pontos_verdes || 0} pts`);
+        selecionados.delete(id);
+        carregarItens();
+        carregarPontos();
+      } catch (e) {
+        toast(e.message, "error");
+      }
+    };
+
+    $("btn-atualizar").onclick = () => carregarItens();
+
+    $("btn-rota").onclick = async () => {
+      const ids = [...selecionados];
+      if (!ids.length) return;
+      try {
+        const data = await api("/coletas/otimizar-rota", {
+          method: "POST",
+          body: JSON.stringify({
+            coletor_lat: parseFloat($("lat").value),
+            coletor_lng: parseFloat($("lng").value),
+            item_ids: ids,
+          }),
+        });
+        const box = $("rota-resultado");
+        box.classList.remove("hidden");
+        box.innerHTML = `
+          <strong>Rota otimizada</strong> · ${data.total_paradas} paradas ·
+          ${data.distancia_total_estimada_km} km<br />
+          <ol style="margin-top:.5rem;padding-left:1.25rem">
+            ${data.sequencia_da_rota
+              .map(
+                (p) =>
+                  `<li>${p.categoria} · ${p.distancia_da_parada_anterior_km} km desde a parada anterior</li>`
+              )
+              .join("")}
+          </ol>`;
+        toast("Rota calculada");
+      } catch (e) {
+        toast(e.message, "error");
+      }
+    };
+
+    async function carregarPontos() {
+      const u = getUser();
+      if (!u) return;
+      try {
+        const data = await api(`/coletas/pontos/${u.usuario_id}`);
+        animateValue($("meus-pontos"), data.total_moedas_verdes || 0);
+      } catch {}
+    }
+
+    mostrarPainel();
+  </script>
+</body>
+</html>
